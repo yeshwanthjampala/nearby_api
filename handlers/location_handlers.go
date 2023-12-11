@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/yeshwanthjampala/nearby_api/database"
@@ -107,6 +108,82 @@ func getExistingData(c *gin.Context) interface{} {
 	return "Existing data"
 }
 
+// func calculateTripCostWithTollGuru(destinationID string, userLocation models.UserLocation, apiKey string) (models.TripCost, error) {
+// 	// Validate the destinationID
+// 	if destinationID == "" {
+// 		return models.TripCost{}, errors.New("destinationID is required")
+// 	}
+
+// 	// Validate the userLocation fields
+// 	if userLocation.Latitude == 0 || userLocation.Longitude == 0 {
+// 		return models.TripCost{}, errors.New("invalid user location")
+// 	}
+
+// 	// Validate the apiKey
+// 	if apiKey == "" {
+// 		return models.TripCost{}, errors.New("TollGuru API key is missing")
+// 	}
+
+// 	// Construct the request URL using the TollGuru API endpoint and parameters
+// 	apiURL := fmt.Sprintf("https://tollguru.com/v1/calculate?apiKey=%s&source=%f,%f&destination=%s",
+// 		apiKey, userLocation.Latitude, userLocation.Longitude, destinationID)
+
+// 	// Make an HTTP GET request to the TollGuru API
+// 	resp, err := http.Get(apiURL)
+// 	if err != nil {
+// 		return models.TripCost{}, fmt.Errorf("failed to fetch data from TollGuru API: %v", err)
+// 	}
+// 	defer resp.Body.Close()
+
+// 	// Check for a successful response status
+// 	if resp.StatusCode != http.StatusOK {
+// 		return models.TripCost{}, fmt.Errorf("TollGuru API returned an error: %s", resp.Status)
+// 	}
+
+// 	// Read the API response body
+// 	body, err := ioutil.ReadAll(resp.Body)
+// 	if err != nil {
+// 		return models.TripCost{}, fmt.Errorf("failed to read response body: %v", err)
+// 	}
+
+// 	// Parse the API response into the TripCost struct
+// 	var tripCost models.TripCost
+// 	if err = json.Unmarshal(body, &tripCost); err != nil {
+// 		return models.TripCost{}, fmt.Errorf("failed to parse TollGuru API response: %v", err)
+// 	}
+
+// 	return tripCost, nil
+// }
+
+// func GetTripCostHandler(c *gin.Context) {
+// 	locationID := c.Param("location_id")
+
+// 	// Extract user's current location from the request body
+// 	var userLocation models.UserLocation
+// 	if err := c.BindJSON(&userLocation); err != nil {
+// 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format for user location"})
+// 		return
+// 	}
+
+// 	// Retrieve the TollGuru API key from environment variables
+// 	apiKey := os.Getenv("TOLLGURU_API_KEY")
+// 	if apiKey == "" {
+// 		c.JSON(http.StatusInternalServerError, gin.H{"error": "TollGuru API key not found"})
+// 		return
+// 	}
+
+// 	// Call the function to calculate trip cost using the provided API key and user's location
+// 	// destinationID := c.Param("location_id")
+// 	tripCost, err := calculateTripCostWithTollGuru(locationID, userLocation, apiKey)
+// 	if err != nil {
+// 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+// 		return
+// 	}
+
+// 	// Return the calculated trip cost as a JSON response
+// 	c.JSON(http.StatusOK, tripCost)
+// }
+
 func calculateTripCostWithTollGuru(destinationID string, userLocation models.UserLocation, apiKey string) (models.TripCost, error) {
 	// Validate the destinationID
 	if destinationID == "" {
@@ -148,6 +225,10 @@ func calculateTripCostWithTollGuru(destinationID string, userLocation models.Use
 	// Parse the API response into the TripCost struct
 	var tripCost models.TripCost
 	if err = json.Unmarshal(body, &tripCost); err != nil {
+		// Check for non-JSON responses or errors in the API response
+		if strings.Contains(string(body), "<") {
+			return models.TripCost{}, errors.New("TollGuru API returned a non-JSON response")
+		}
 		return models.TripCost{}, fmt.Errorf("failed to parse TollGuru API response: %v", err)
 	}
 
@@ -172,9 +253,13 @@ func GetTripCostHandler(c *gin.Context) {
 	}
 
 	// Call the function to calculate trip cost using the provided API key and user's location
-	// destinationID := c.Param("location_id")
 	tripCost, err := calculateTripCostWithTollGuru(locationID, userLocation, apiKey)
 	if err != nil {
+		// Check for specific error messages related to API response
+		if strings.Contains(err.Error(), "non-JSON response") {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Unexpected response from TollGuru API"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
